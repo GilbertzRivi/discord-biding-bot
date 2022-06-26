@@ -1,4 +1,3 @@
-from operator import truediv
 import discord, asyncio, datetime, time
 from discord.ext import commands, tasks
 from os import getenv
