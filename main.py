@@ -1,3 +1,4 @@
+from operator import truediv
 import discord, asyncio, datetime, time
 from discord.ext import commands, tasks
 from os import getenv
@@ -9,7 +10,7 @@ load_dotenv('token.env')
 
 currencies = {
     'ADA': 5,
-    'ROG': 50,
+    'ROG': 250,
     'Djed': 2.5
 }
 
@@ -38,7 +39,7 @@ def check_permissions(ctx):
 def timestamp_to_days(timestamp):
 
     days = int(timestamp / 86400)
-    rest = time % 86400
+    rest = timestamp % 86400
     hours = int(rest / 3600)
     rest = rest % 3600
     minutes = int(rest / 60)
@@ -145,13 +146,13 @@ Setting channels for given operations.
 
 Creating bid.
 .createbid [id] - Starts the process of creating bid.
-.changetitle [id] <title> - Changes bids title.
-.changeimage [id] [image url] - Changes bids image.
-.changedesc - [id] <description> - Changes bids description.
-.changecurrency [id] <currency> - Changes bids currency. 
-.changestartprice [id] [price] - Changes bids starting price.
-.changeminimalprice [id] [price] - Changes bids minimal price.
-.changeendtime [id] <day.month.year hour:minute> - Changes when the bid should end.
+.settitle [id] <title> - Changes bids title.
+.setimage [id] [image url] - Changes bids image.
+.setdesc - [id] <description> - Changes bids description.
+.setcurrency [id] <currency> - Changes bids currency. 
+.setstartprice [id] [price] - Changes bids starting price.
+.setminimalprice [id] [price] - Changes bids minimal price.
+.setendtime [id] <day.month.year hour:minute> - Changes when the bid should end.
 .publishbid [id] [#channel] - Publishes choosen bid. You can't edid published bids.
 .seebids - shows all published/completed bids
 .rembid [id] - Removes choosen bid completly.
@@ -665,7 +666,7 @@ Successfully created bid, to finish creating it, use this commands:.
 To delete auction use .rembid ID
         """
     
-    embed=discord.Embed(title='Title not provided', description="Description not provided\n\nBid by clicking ☑ under this message")
+    embed=discord.Embed(title='Title not provided', description="Description not provided\n\nTo start bidding, click the 🚀 at the bottom of this auction")
     embed.set_thumbnail(url=ctx.guild.icon_url)
     embed.add_field(name="Current Price", value="Not provided", inline=False)
     embed.add_field(name="Minimal Price", value="Not provided", inline=False)
@@ -817,7 +818,7 @@ async def setdesc(ctx, id: int, *, description):
     auction_setting_channel_id = config.find_one({"name":"bid_creation_channel"})['value']
     auction_message = await client.get_channel(auction_setting_channel_id).fetch_message(message_id)
     auction_embed = auction_message.embeds[0]
-    auction_embed.description = description + '\n\nBid by clicking ☑ under this message'
+    auction_embed.description = description + '\n\nTo start bidding, click the 🚀 at the bottom of this auction'
     
     bids.find_one_and_update({"id": id}, {'$set': {"description": description}})  
     await auction_message.edit(embed=auction_embed)  
@@ -914,12 +915,20 @@ async def setstartprice(ctx, id: int, price: float):
         await ctx.send('Set the currency first')
         return
     
+    current_price_hr = ''
+    for i, char in enumerate(str(price)[::-1][2:]):
+        if i % 3 == 0:
+            current_price_hr += ' '
+        current_price_hr += char
+
+    current_price_hr = current_price_hr[::-1][:-1] + str(price)[-2:]
+
     message_id = bid['message_id']
     config = database.config
     auction_setting_channel_id = config.find_one({"name":"bid_creation_channel"})['value']
     auction_message = await client.get_channel(auction_setting_channel_id).fetch_message(message_id)
     auction_embed = auction_message.embeds[0]
-    auction_embed.set_field_at(0, name = 'Current Price', value = f'```fix\n{price} {currency}```\n\n1 bid costs {currencies[currency]} {currency}', inline=False)
+    auction_embed.set_field_at(0, name = 'Current Price', value = f'```fix\n{current_price_hr} {currency}```\n\n1 bid costs {currencies[currency]} {currency}', inline=False)
     
     bids.find_one_and_update({'id': id}, {'$set': {'current_price': price}})
     
@@ -1061,7 +1070,7 @@ async def setendtime(ctx, id: int, *, date):
     auction_setting_channel_id = config.find_one({"name":"bid_creation_channel"})['value']
     auction_message = await client.get_channel(auction_setting_channel_id).fetch_message(message_id)
     auction_embed = auction_message.embeds[0]
-    auction_embed.set_field_at(3, name = 'Ends at', value = f'``{date}``', inline=False)
+    auction_embed.set_field_at(3, name = 'Ends at', value = f'```diff\n+ {date}```', inline=False)
     await auction_message.edit(embed=auction_embed)
     
 @setendtime.error
@@ -1154,10 +1163,24 @@ async def publishbid(ctx, id: int, channel: discord.TextChannel):
         return
     
     end_time = datetime.datetime.fromtimestamp(end_timestamp).strftime('%d.%m.%Y %H:%M')
-    
-    embed = discord.Embed(title=title, description=f"{description}\n\nBid by clicking ☑ under this message", timestamp=ctx.message.created_at)
+
+    rog_emoji = discord.utils.get(client.emojis, name='ROG')
+    cardano_emoji = discord.utils.get(client.emojis, name='cardano')
+
+    current_price_hr = ''
+    for i, char in enumerate(str(current_price)[::-1][2:]):
+        if i % 3 == 0:
+            current_price_hr += ' '
+        current_price_hr += char
+
+    current_price_hr = current_price_hr[::-1][:-1] + str(current_price)[-2:]
+
+    if currency == "ROG":
+        embed = discord.Embed(title=title, description=f"{description}\n\nTo start bidding in $ROG Coin <:{rog_emoji.name}:{rog_emoji.id}>, please click  emoji at the  bottom of this auction.", timestamp=ctx.message.created_at)
+    else:
+        embed = discord.Embed(title=title, description=f"{description}\n\nTo start bidding, click the <:{cardano_emoji.name}:{cardano_emoji.id}> at the bottom of this auction", timestamp=ctx.message.created_at)
     embed.set_thumbnail(url=ctx.guild.icon_url)
-    embed.add_field(name = 'Current price', value = f'```fix\n{current_price} {currency}```\n\n1 bid costs {currencies[currency]} {currency}', inline=False)
+    embed.add_field(name = 'Current price', value = f'```fix\n{current_price_hr} {currency}```\n\n1 bid costs {currencies[currency]} {currency}', inline=False)
     
     if current_price >= minimal_price:
         embed.add_field(name="Minimal Price", value=f'{minimal_price} {currency}', inline=False)
@@ -1165,7 +1188,9 @@ async def publishbid(ctx, id: int, channel: discord.TextChannel):
         embed.add_field(name="Minimal Price", value=f'has not been reached', inline=False)
         
     embed.add_field(name="Last bids", value="None", inline=False)  
-    embed.add_field(name="Ends at", value=end_time, inline=False)  
+    time_left = end_timestamp - datetime.datetime.now().timestamp()
+    days, hours, minutes, _ = timestamp_to_days(time_left)
+    embed.add_field(name = 'Ends at', value = f'```diff\n+ {end_time}\n- Time left: {days}days {hours}hours {minutes}minutes```', inline=False)
     embed.set_image(url=image_url)
     embed.set_footer(text='Click emoji under this message to place your bid!')
     message = await channel.send(content='@everyone',embed=embed)
@@ -1181,16 +1206,24 @@ async def publishbid(ctx, id: int, channel: discord.TextChannel):
                 'winer': None,
                 'published': True,
                 'published_channel_id': channel.id,
-                'last_bids_ids': []
+                'last_bids_ids': [],
+                'double_currency': False,
+                'double_currency_checkbox': False,
+                'additional_ada': 0
                 }
             }
         )
     
-    await message.add_reaction('☑')
+    if currency == "ROG":
+        choosen_emoji = rog_emoji
+    else:
+        choosen_emoji = cardano_emoji
+
+    await message.add_reaction(choosen_emoji)
     try:
         await client.wait_for('reaction_add', timeout=5.0)
     except asyncio.TimeoutError:
-        await message.add_reaction('☑')
+        await message.add_reaction(choosen_emoji)
         
     await ctx.send('The bid has been published successfully')
       
@@ -1333,6 +1366,7 @@ async def on_message(msg):
         
 @client.event
 async def on_raw_reaction_add(payload):
+
     if payload.user_id == client.user.id:
         return
     
@@ -1349,16 +1383,25 @@ async def on_raw_reaction_add(payload):
     if message.id == verification_message_id and channel.id == verification_channel_id:
         await member.add_roles(guild.get_role(verification_role_id))
         
+    rog_emoji = discord.utils.get(client.emojis, name='ROG')
+    cardano_emoji = discord.utils.get(client.emojis, name='cardano')
+    cardano2_emoji = discord.utils.get(client.emojis, name='cardano2')
+    
     bids = database.bids
     bid = bids.find_one({"published_id": message.id})
-    if bid is not None and payload.emoji.name == '☑':
+    if bid is not None and (payload.emoji == rog_emoji or payload.emoji == cardano_emoji or payload.emoji == cardano2_emoji):
         
         last_bids_ids = bid['last_bids_ids']
         if len(last_bids_ids) > 0:
             if last_bids_ids[-1] == member.id:
-                await member.send(f"{member.mention} You can't bid two times in a row")
-                await message.remove_reaction('☑', member)
+                try:
+                    await member.send(f"{member.mention} You can't bid two times in a row")
+                except: pass
+                await message.remove_reaction(rog_emoji, member)
+                await message.remove_reaction(cardano2_emoji, member)
+                await message.remove_reaction(cardano_emoji, member)
                 return
+                
             else:
                 user_mentions = database.user_mentions
                 user_mentions_result = user_mentions.find_one({'id': last_bids_ids[-1]})
@@ -1366,39 +1409,79 @@ async def on_raw_reaction_add(payload):
                     embed = discord.Embed(title=f'Notification', timestamp=datetime.datetime.utcnow())
                     embed.add_field(name= f'VVV', value=f"```diff\n- You've been overbid by {member.name}```[Link to auction]({message.jump_url})")
                     if user_mentions_result['value']:
-                        await client.get_user(last_bids_ids[-1]).send(embed=embed)
+                        try:
+                            await client.get_user(last_bids_ids[-1]).send(embed=embed)
+                        except: pass
                 elif user_mentions_result is None:
                     embed = discord.Embed(title=f'Notification', timestamp=datetime.datetime.utcnow())
                     embed.add_field(name= f'VVV', value=f"```diff\n- You've been overbid by {member.name}```[Link to auction]({message.jump_url})")
-                    await client.get_user(last_bids_ids[-1]).send(embed=embed)
+                    try:
+                        await client.get_user(last_bids_ids[-1]).send(embed=embed)
+                    except: pass
 
         currency = bid['currency']
         current_price = bid['current_price']
         minimal_price = bid['minimal_price']
         auction_embed = message.embeds[0]
-
+        additional_ada = 0
         current_price += currencies[currency]
-        auction_embed.set_field_at(0, name = 'Current Price', value = f'```fix\n{current_price} {currency}```\n1 bid costs {currencies[currency]} {currency}', inline=False)
         
+        current_price_hr = ''
+        for i, char in enumerate(str(current_price)[::-1][2:]):
+            if i % 3 == 0:
+                current_price_hr += ' '
+            current_price_hr += char
+
+        current_price_hr = current_price_hr[::-1][:-1] + str(current_price)[-2:]
+
+        if bid['additional_ada'] != 0:
+            additional_ada = bid['additional_ada'] + 1
+            auction_embed.set_field_at(0, name = 'Current Price', value = f'```fix\n{current_price_hr} {currency}\n{additional_ada} ADA```\n1 bid costs {currencies[currency]} {currency} and 1 ADA', inline=False)
+        else:
+            auction_embed.set_field_at(0, name = 'Current Price', value = f'```fix\n{current_price_hr} {currency}```\n1 bid costs {currencies[currency]} {currency}', inline=False)
+
         if current_price >= minimal_price:
             auction_embed.set_field_at(1, name = 'Minimal Price', value = f'Reached minimal price {minimal_price} {currency}', inline=False)
+            if currency == 'ROG' and not bid['double_currency_checkbox']:
+                description = auction_embed.description
+                description += f'\n To start biding in $ADA click ☑️ emoji at the bottom of auction '
+                auction_embed.description = description
+                await message.add_reaction('☑️')
+                try:
+                    await client.wait_for('reaction_add', timeout=5.0)
+                except asyncio.TimeoutError:
+                    await message.add_reaction('☑️')
+                bids.find_one_and_update(
+                    {
+                        "published_id": message.id
+                    },{
+                        '$set':
+                            {'double_currency_checkbox': True,}
+                    }
+                )
         
         last_bids = bid['last_bids']
         last_bids_formated = []
         if len(last_bids) >= 3: last_bids = last_bids[-2:]
-        last_bids.append(f'{member.name} gave {current_price} {currency}')
+        if bid['additional_ada'] != 0:
+            last_bids.append(f'{member.name} gave {current_price_hr} {currency} and {additional_ada} ADA')
+        else:
+            last_bids.append(f'{member.name} gave {current_price_hr} {currency}')
         for bid_string in last_bids:
             last_bids_formated.append(f'```diff\n- {bid_string}```')
         
         last_bids_reversed = last_bids_formated[::-1]
         last_bids_reversed.insert(1, '\n')
-        last_bids_reversed[0] = f'```diff\n+ {member.name} gave {current_price} {currency}```'
+        if bid['additional_ada'] != 0:
+            last_bids_reversed[0] = f'```diff\n+ {member.name} gave {current_price_hr} {currency} and {additional_ada} ADA```'
+        else:
+            last_bids_reversed[0] = f'```diff\n+ {member.name} gave {current_price_hr} {currency}```'
         last_bids_ids.append(member.id)
                 
         auction_embed.set_field_at(2, name = 'Last Bids', value = ''.join(last_bids_reversed), inline=False)
         
         end_time = bid['end_time']
-        if end_time - datetime.datetime.now().timestamp() < 30*60:
+        if end_time - datetime.datetime.now().timestamp() < 5*60:
             end_time += 60
         
         bids.find_one_and_update(
@@ -1410,14 +1493,134 @@ async def on_raw_reaction_add(payload):
                         'current_price': current_price,
                         'last_bids': last_bids,
                         'last_bids_ids': last_bids_ids,
-                        'end_time': end_time
+                        'end_time': end_time,
+                        'additional_ada': additional_ada
                         }
                 })
-        
-        auction_embed.set_field_at(3, name = 'Ends at', value = datetime.datetime.fromtimestamp(end_time).strftime('%d.%m.%Y %H:%M'), inline=False)
+        end_time_hr = datetime.datetime.fromtimestamp(end_time).strftime('%d.%m.%Y %H:%M')
+        time_left = end_time - datetime.datetime.now().timestamp()
+        days, hours, minutes, _ = timestamp_to_days(time_left)
+        auction_embed.set_field_at(3, name = 'Ends at', value = f'```diff\n+ {end_time_hr}\n- Time left: {days}days {hours}hours {minutes}minutes```', inline=False)
         
         await message.edit(embed=auction_embed)
-        await message.remove_reaction('☑', member)
+        await message.remove_reaction(rog_emoji, member)
+        await message.remove_reaction(cardano2_emoji, member)
+        await message.remove_reaction(cardano_emoji, member)
+
+    elif bid is not None and payload.emoji.name == '☑️':
+        
+        if not bid['double_currency_checkbox']:
+            await message.remove_reaction('☑️', member)
+            return
+
+        if bid['additional_ada'] != 0:
+            await message.remove_reaction('☑️', member)
+            return
+
+        last_bids_ids = bid['last_bids_ids']
+        if len(last_bids_ids) > 0:
+            if last_bids_ids[-1] == member.id:
+                try:
+                    await member.send(f"{member.mention} You can't bid two times in a row")
+                except: pass
+                await message.remove_reaction('☑️', member)
+                return
+        
+        bids.find_one_and_update(
+            {
+                "published_id": message.id
+            },{
+                '$set':{
+                    'double_currency': True,
+                }
+            }
+        )
+        await message.remove_reaction('☑️', client.user)
+
+        last_bids_ids = bid['last_bids_ids']
+        user_mentions = database.user_mentions
+        user_mentions_result = user_mentions.find_one({'id': last_bids_ids[-1]})
+        if user_mentions_result is not None:
+            embed = discord.Embed(title=f'Notification', timestamp=datetime.datetime.utcnow())
+            embed.add_field(name= f'VVV', value=f"```diff\n- You've been overbid by {member.name}```[Link to auction]({message.jump_url})")
+            if user_mentions_result['value']:
+                try:
+                    await client.get_user(last_bids_ids[-1]).send(embed=embed)
+                except: pass
+        elif user_mentions_result is None:
+            embed = discord.Embed(title=f'Notification', timestamp=datetime.datetime.utcnow())
+            embed.add_field(name= f'VVV', value=f"```diff\n- You've been overbid by {member.name}```[Link to auction]({message.jump_url})")
+            try:
+                await client.get_user(last_bids_ids[-1]).send(embed=embed)
+            except: pass
+
+        currency = bid['currency']
+        current_price = bid['current_price']
+        minimal_price = bid['minimal_price']
+        auction_embed = message.embeds[0]
+        additional_ada = bid['additional_ada']
+
+        current_price += currencies[currency]
+        additional_ada += 1
+        
+        current_price_hr = ''
+        for i, char in enumerate(str(current_price)[::-1][2:]):
+            if i % 3 == 0:
+                current_price_hr += ' '
+            current_price_hr += char
+
+        current_price_hr = current_price_hr[::-1][:-1] + str(current_price)[-2:]
+
+        auction_embed.set_field_at(0, name = 'Current Price', value = f'```fix\n{current_price_hr} {currency}\n{additional_ada} ADA```\n1 bid costs {currencies[currency]} {currency} and 1 ADA', inline=False)
+
+        last_bids = bid['last_bids']
+        last_bids_formated = []
+        if len(last_bids) >= 3: last_bids = last_bids[-2:]
+        last_bids.append(f'{member.name} gave {current_price_hr} {currency}')
+        for bid_string in last_bids:
+            last_bids_formated.append(f'```diff\n- {bid_string}```')
+
+        last_bids_reversed = last_bids_formated[::-1]
+        last_bids_reversed.insert(1, '\n')
+        last_bids_reversed[0] = f'```diff\n+ {member.name} gave {current_price_hr} {currency} and {additional_ada} ADA```'
+        last_bids_ids.append(member.id)
+                
+        auction_embed.set_field_at(2, name = 'Last Bids', value = ''.join(last_bids_reversed), inline=False)
+        
+        end_time = bid['end_time']
+        if end_time - datetime.datetime.now().timestamp() < 5*60:
+            end_time += 60
+        
+        bids.find_one_and_update(
+            {
+                "published_id": message.id
+                },{
+                '$set': {
+                        'winer': member.id,
+                        'current_price': current_price,
+                        'last_bids': last_bids,
+                        'last_bids_ids': last_bids_ids,
+                        'end_time': end_time,
+                        'additional_ada': additional_ada
+                        }
+                })
+        end_time_hr = datetime.datetime.fromtimestamp(end_time).strftime('%d.%m.%Y %H:%M')
+        time_left = end_time - datetime.datetime.now().timestamp()
+        days, hours, minutes, _ = timestamp_to_days(time_left)
+        auction_embed.set_field_at(3, name = 'Ends at', value = f'```diff\n+ {end_time_hr}\n- Time left: {days}days {hours}hours {minutes}minutes```', inline=False)
+        
+        auction_embed.description = '\n'.join(auction_embed.description.split('\n')[:-1])
+
+        await message.edit(embed=auction_embed)
+        await message.remove_reaction('☑️', member)
+        await message.remove_reaction('☑️', client.user)
+        await message.remove_reaction(rog_emoji, client.user)
+
+        await message.add_reaction(cardano2_emoji)
+        try:
+            await client.wait_for('reaction_add', timeout=5.0)
+        except asyncio.TimeoutError:
+            await message.add_reaction(cardano2_emoji)
 
 @client.event
 async def on_member_remove(member):
@@ -1446,33 +1649,59 @@ async def loop_1m():
                     price = bid['current_price']
                     currency = bid['currency']
                     notification_channel = client.get_channel(database.config.find_one({'name': 'notification_channel'})['value'])
+                    additional_ada = bid['additional_ada']
 
                     auction_embed.title = 'AUCTION ENDED'
                     await message.edit(embed=auction_embed)
 
                     if winner is not None:
                         winner = client.get_user(winner)
-                        await winner.send(f"You won this auction:\n{title}\nIn 24 hours transfer {price} + 1,6 (transaction fee) {currency} on to this wallet:\n```fix\n{database.config.find_one({'name': 'wallet_adress'})['value']}```")
-                        await notification_channel.send(f'Bid {title}, Ended reaching {price} {currency},\nThe winner: {winner.mention}')
+                        try:
+                            if additional_ada != 0:
+                                await winner.send(f"You won this auction:\n{title}\nIn 24 hours transfer {price} + 2,1 (transaction fee) {currency} + {additional_ada} ADA on to this wallet:\n```fix\n{database.config.find_one({'name': 'wallet_adress'})['value']}```")
+                            else:
+                                await winner.send(f"You won this auction:\n{title}\nIn 24 hours transfer {price} + 2,1 (transaction fee) {currency} on to this wallet:\n```fix\n{database.config.find_one({'name': 'wallet_adress'})['value']}```")
+                        except:
+                            await notification_channel.send(f"Couldn't send message to auction winner: {winner.mention}\nYou should notify him about this.")
+                        if additional_ada != 0:
+                            await notification_channel.send(f'Bid {title}, Ended reaching {price} {currency} + {additional_ada} ADA,\nThe winner: {winner.mention}')
+                        else:
+                            await notification_channel.send(f'Bid {title}, Ended reaching {price} {currency},\nThe winner: {winner.mention}')
                     else: 
                         await notification_channel.send(f'Bid {title}, Ended without reaching minimal price')
-
+                        await channel.send(f'Bid {title}, Ended without reaching minimal price')
                     last_bids_ids = bid['last_bids_ids']
                     list_bids_ids_withouot_duplicates = list(set(last_bids_ids))
+
+                    await message.clear_reactions()
 
                     if winner is not None:
                         list_bids_ids_withouot_duplicates.remove(winner.id)
 
                     for id in list_bids_ids_withouot_duplicates:
                         user = client.get_user(id)
-                        await user.send(f"You didn't won the auction {title}")
+                        try:
+                            await user.send(f"You didn't won the auction {title}")
+                        except: pass
 
                     bids.find_one_and_delete({'id': bid['id']})
+
                 except Exception as e:
                     config = database.config
                     bid_creation_channel_id = config.find_one({'name': 'bid_creation_channel'})['value']
                     bid_creation_channel = client.get_channel(bid_creation_channel_id)
-                    await bid_creation_channel.send(content=e)                
+                    await bid_creation_channel.send(content=e)
+            
+            else: #timer
+                end_time = bid['end_time'] + 60
+                end_time_hr = datetime.datetime.fromtimestamp(end_time).strftime('%d.%m.%Y %H:%M')
+                channel = client.get_channel(bid['published_channel_id'])
+                message = await channel.fetch_message(bid['published_id'])
+                auction_embed = message.embeds[0]
+                time_left = end_time - datetime.datetime.now().timestamp()
+                days, hours, minutes, _ = timestamp_to_days(time_left)
+                auction_embed.set_field_at(3, name = 'Ends at', value = f'```diff\n+ {end_time_hr}\n- Time left: {days}days {hours}hours {minutes}minutes```', inline=False)
+                await message.edit(embed=auction_embed)
 
 @loop_1m.error
 async def loop1merror(error):
